@@ -3,7 +3,7 @@
 ## Install
 
 1. Add the store: **App Store → Community app stores → Add** with
-   `https://github.com/LoloMojo/umbrel-kasm-store`.
+   `https://github.com/LoloMojo/Kasm-workspace-for-umbrel`.
 2. Open **Kasm Workspaces** and press **Install**. This pulls the six Kasm
    service images (about 2 GB) and boots the stack: bootstrap → database →
    DB seed → API / manager / agent / guac / proxy. First start may take a few

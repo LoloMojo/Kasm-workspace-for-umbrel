@@ -5,7 +5,7 @@ storage:
 category: developer
 name: Kasm Workspaces
 tagline: Browser-based desktops and apps (cloud workspaces)
-icon: https://raw.githubusercontent.com/LoloMojo/umbrel-kasm-store/main/kasm-workspaces/icon.svg
+icon: https://raw.githubusercontent.com/LoloMojo/Kasm-workspace-for-umbrel/main/kasm-workspaces/icon.svg
 version: "1.19.0"
 port: 8443
 requiresHttps: true
@@ -70,4 +70,4 @@ defaultUsername: admin@kasm.local
 defaultPassword: ""
 deterministicPassword: true
 submitter: LoloMojo
-submission: https://github.com/LoloMojo/umbrel-kasm-store
+submission: https://github.com/LoloMojo/Kasm-workspace-for-umbrel

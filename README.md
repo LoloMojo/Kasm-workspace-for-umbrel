@@ -7,7 +7,7 @@ Add this repository in umbrelOS under
 `App Store -> Community app stores`:
 
 ```
-https://github.com/LoloMojo/umbrel-kasm-store
+https://github.com/LoloMojo/Kasm-workspace-for-umbrel
 ```
 
 | Field | Value |
