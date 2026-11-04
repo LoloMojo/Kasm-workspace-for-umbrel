@@ -1,0 +1,219 @@
+services:
+  # One-shot config generator: builds /opt/kasm/current from vendored 1.19.0
+  # templates + per-install secrets, exactly like Kasm's install.sh does.
+  # Idempotent (marker file) so restarts don't regenerate certs/ids.
+  bootstrap:
+    image: kasmweb/api:1.19.0-rolling
+    user: root
+    restart: on-failure
+    entrypoint: ["/bin/bash", "/opt/kasm-src/bootstrap.sh"]
+    environment:
+      KASM_ADMIN_PASSWORD: ${APP_PASSWORD}
+      KASM_DB_PASSWORD: ${APP_KASM_WORKSPACES_DB_PASSWORD}
+      KASM_MANAGER_TOKEN: ${APP_KASM_WORKSPACES_MANAGER_TOKEN}
+      KASM_REGISTRATION_TOKEN: ${APP_KASM_WORKSPACES_REGISTRATION_TOKEN}
+      KASM_PROXY_PORT: "8443"
+    volumes:
+      # package files (bootstrap.sh + conf templates) land in app data on install
+      - ${APP_DATA_DIR}/kasm:/opt/kasm-src:ro
+      # generated config tree, shared by every Kasm service
+      - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+    networks:
+      - default
+      - kasm_default_network
+
+  # PostgreSQL (kasmweb's tuned image; schema is created by db-init via alembic)
+  db:
+    image: kasmweb/postgres:1.19.0-rolling
+    restart: on-failure
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=$$POSTGRES_USER --dbname=$$POSTGRES_DB && cat /proc/1/cmdline | grep -q '^postgres'"]
+      timeout: 5s
+      retries: 20
+    environment:
+      POSTGRES_PASSWORD: ${APP_KASM_WORKSPACES_DB_PASSWORD}
+      POSTGRES_USER: kasmapp
+      POSTGRES_DB: kasm
+    volumes:
+      - ${APP_DATA_DIR}/data/kasm/conf/database/data.sql:/docker-entrypoint-initdb.d/data.sql:ro
+      - ${APP_DATA_DIR}/data/kasm/conf/database/pg_hba.conf:/var/lib/postgresql/conf/pg_hba.conf:ro
+      - ${APP_DATA_DIR}/data/kasm/conf/database/postgresql.conf:/var/lib/postgresql/conf/postgresql.conf:ro
+      - ${APP_DATA_DIR}/data/kasm/certs/db_server.crt:/etc/ssl/certs/db_server.crt:ro
+      - ${APP_DATA_DIR}/data/kasm/certs/db_server.key:/etc/ssl/certs/db_server.key:ro
+      - ${APP_DATA_DIR}/data/kasm/log/postgres:/var/log/postgres/
+      - ${APP_DATA_DIR}/data/kasm/tmp/kasm_db:/tmp/
+      - ${APP_DATA_DIR}/data/db:/var/lib/postgresql/data
+    command: postgres -c ssl=on -c ssl_cert_file=/etc/ssl/certs/db_server.crt -c ssl_key_file=/etc/ssl/certs/db_server.key -c config_file=/var/lib/postgresql/conf/postgresql.conf -c hba_file=/var/lib/postgresql/conf/pg_hba.conf
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - kasm_default_network
+
+  # One-shot DB initialization: alembic schema + seed users/settings/images/agents
+  db-init:
+    image: kasmweb/api:1.19.0-rolling
+    user: "1000:1000"
+    restart: on-failure
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        if [ -f /opt/kasm/current/.db-initialized ]; then
+          echo "db already initialized, skipping"
+          exit 0
+        fi
+        CONFIG=/opt/kasm/current/conf/app/api/api.app.config.yaml
+        ALEMBIC=/src/database/migration/alembic.ini
+        SEEDDIR=/opt/kasm/current/conf/database/seed_data
+        python3 /src/api_server/server.pyc --initialize-database --cfg $CONFIG --alembic-config $ALEMBIC --populate-production --seed-file $SEEDDIR/default_properties.yaml
+        python3 /src/api_server/server.pyc --cfg $CONFIG --alembic-config $ALEMBIC --populate-production --seed-file $SEEDDIR/default_images_amd64.yaml
+        python3 /src/api_server/server.pyc --cfg $CONFIG --alembic-config $ALEMBIC --populate-production --seed-file $SEEDDIR/default_agents.yaml
+        touch /opt/kasm/current/.db-initialized
+        echo "database initialized"
+    volumes:
+      - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - default
+      - kasm_default_network
+
+  kasm_api:
+    image: kasmweb/api:1.19.0-rolling
+    user: "1000:1000"
+    read_only: true
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "/usr/bin/healthcheck.sh", "http://localhost:8080/api/__healthcheck", "", "5", "60"]
+      timeout: 30s
+      interval: 10s
+      retries: 3
+    volumes:
+      - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+      - ${APP_DATA_DIR}/data/kasm/healthcheck/kasm_api:/healthcheck
+      - ${APP_DATA_DIR}/data/kasm/tmp/api:/tmp
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - kasm_default_network
+
+  kasm_manager:
+    image: kasmweb/manager:1.19.0-rolling
+    user: "1000:1000"
+    read_only: true
+    restart: on-failure
+    environment:
+      PYTHONWARNINGS: ignore:datetime.datetime.utcnow:DeprecationWarning
+    healthcheck:
+      test: ["CMD", "/usr/bin/healthcheck.sh", "http://localhost:8181/__healthcheck", "", "5", "60"]
+      timeout: 30s
+      interval: 10s
+      retries: 3
+    volumes:
+      - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+      - ${APP_DATA_DIR}/data/kasm/healthcheck/kasm_manager:/healthcheck
+      - ${APP_DATA_DIR}/data/kasm/tmp/manager:/tmp
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    networks:
+      - default
+      - kasm_default_network
+
+  # Agent spawns per-user session containers via the host Docker socket.
+  # NOTE: this is host-root-equivalent access, inherent to Kasm itself.
+  kasm_agent:
+    image: kasmweb/agent:1.19.0-rolling
+    user: root
+    read_only: true
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "/usr/bin/healthcheck.sh", "http://localhost:4444/__healthcheck", "", "30", "90", "15"]
+      timeout: 30s
+      interval: 30s
+      retries: 3
+    volumes:
+      - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${APP_DATA_DIR}/data/kasm/conf/nginx:/etc/nginx/conf.d
+      - ${APP_DATA_DIR}/data/kasm/healthcheck/kasm_agent:/healthcheck
+    depends_on:
+      kasm_manager:
+        condition: service_started
+    networks:
+      - default
+      - kasm_default_network
+
+  kasm_guac:
+    image: kasmweb/kasm-guac:1.19.0-rolling
+    user: "1000:1000"
+    read_only: true
+    init: true
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "/usr/bin/healthcheck.sh", "http://localhost:3000/__healthcheck", "", "30", "90"]
+      timeout: 30s
+      interval: 60s
+      retries: 3
+    volumes:
+      - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+      - ${APP_DATA_DIR}/data/kasm/tmp/guac:/tmp
+      - ${APP_DATA_DIR}/data/kasm/healthcheck/kasm_guac:/healthcheck
+    depends_on:
+      kasm_api:
+        condition: service_started
+    networks:
+      - default
+      - kasm_default_network
+
+  # Browser-facing nginx: listens 443 ssl internally (agent/guac traffic) plus
+  # plain HTTP 8080 for the umbrelOS app gateway (which terminates TLS itself).
+  proxy:
+    image: kasmweb/proxy:1.19.0-rolling
+    restart: on-failure
+    volumes:
+      - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+      - ${APP_DATA_DIR}/data/kasm/conf/nginx:/etc/nginx/conf.d:ro
+      - ${APP_DATA_DIR}/data/kasm/conf/nginx/resolver.conf:/etc/nginx/conf.d/resolver.conf:rw
+      - ${APP_DATA_DIR}/data/kasm/certs/kasm_nginx.key:/etc/ssl/private/kasm_nginx.key:ro
+      - ${APP_DATA_DIR}/data/kasm/certs/kasm_nginx.crt:/etc/ssl/certs/kasm_nginx.crt:ro
+      - ${APP_DATA_DIR}/data/kasm/log/nginx:/var/log/external/nginx/
+      - ${APP_DATA_DIR}/data/kasm/log/logrotate:/var/log/external/logrotate/
+      - ${APP_DATA_DIR}/data/kasm/tmp/manager:/opt/kasm/current/tmp/manager:ro
+    depends_on:
+      kasm_manager:
+        condition: service_started
+      kasm_api:
+        condition: service_started
+      kasm_agent:
+        condition: service_started
+      kasm_guac:
+        condition: service_started
+    networks:
+      - default
+      - kasm_default_network
+
+  # umbrelOS 2.0 app gateway config (no container runs; umbreld reads this).
+  app_proxy:
+    environment:
+      # <app-id>_<compose-service-name>_1
+      APP_HOST: kasm-workspaces_proxy_1
+      APP_PORT: 8080
+      # Kasm has its own login + websocket streaming; umbrel auth would
+      # double-gate and break session upgrades. Users can re-enable per-app
+      # from umbrelOS settings if they want an extra auth layer.
+      PROXY_AUTH_ADD: "false"
+
+networks:
+  # Sessions are spawned by the agent on the host Docker daemon with this exact
+  # network name (Kasm hardcodes it); the proxy must be attached to reach them.
+  kasm_default_network:
+    name: kasm_default_network
+    driver: bridge

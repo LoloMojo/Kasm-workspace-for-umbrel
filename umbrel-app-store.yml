@@ -1,0 +1,4 @@
+# This is the Community App Store manifest for umbrelOS.
+# "id" is the prefix every app in this store must start with.
+id: kasm
+name: Kasm Workspaces Store

@@ -1,0 +1,73 @@
+manifestVersion: 2.0
+id: kasm-workspaces
+storage:
+  dataRoot: data
+category: developer
+name: Kasm Workspaces
+tagline: Browser-based desktops and apps (cloud workspaces)
+icon: https://raw.githubusercontent.com/LoloMojo/umbrel-kasm-store/main/kasm-workspaces/icon.svg
+version: "1.19.0"
+port: 8443
+requiresHttps: true
+description: >-
+  Kasm Workspaces is a container streaming platform: full desktops and single
+  apps (Firefox, Chrome, VS Code, and more) run in Docker containers on your
+  server and stream to any browser tab — no client installs needed. It is the
+  technology behind popular cyber ranges and remote-desktop products.
+
+
+  What's in the box
+
+
+  - The complete Kasm Workspaces single-server stack (DB, API, manager, agent,
+    session proxy and guac streaming), exactly as the official installer builds
+    it.
+
+
+  - A catalog of 53 ready-made workspace images (24 pre-enabled, Kasm's
+    rolling channel) that are pulled from Docker Hub the first time you launch
+    each one. Enable more under Admin → Images.
+
+
+  Login after install: admin@kasm.local (and user@kasm.local) with the app
+  password shown in Umbrel (the same password is used for both accounts).
+
+
+  Important notes
+
+
+  - First open: the browser shows a certificate warning because the page is
+    served through Umbrel's local HTTPS proxy — proceed anyway.
+
+
+  - You can log in from any device on your network at
+    https://<umbrel-address>:8443.
+
+
+  - Kasm runs its own user accounts and is its own security boundary; keep
+    "Require Umbrel login" off for the app URL so the Kasm login page works.
+
+
+  - Launching a workspace downloads its image on first use (1–3 GB). Sessions
+    stop after 20 idle minutes by default.
+
+
+  Security note: the Kasm agent needs access to the host Docker socket to spawn
+  session containers — the same requirement as every standalone Kasm install.
+  Only install this app if you trust everything on your Umbrel server.
+releaseNotes: >-
+  Initial release: Kasm Workspaces 1.19.0 (rolling channel) packaged for
+  umbrelOS. Login admin@kasm.local / user@kasm.local with the Umbrel app
+  password.
+developer: Kasm Technologies
+website: https://www.kasmweb.com/
+dependencies: []
+repo: https://github.com/kasmtech
+support: https://discord.gg/kasmweb
+gallery: []
+path: ""
+defaultUsername: admin@kasm.local
+defaultPassword: ""
+deterministicPassword: true
+submitter: LoloMojo
+submission: https://github.com/LoloMojo/umbrel-kasm-store
