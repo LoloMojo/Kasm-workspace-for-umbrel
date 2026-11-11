@@ -52,7 +52,24 @@ Users).
 - **App stuck at "starting" / proxy 502 for several minutes** — the DB seed
   runs alembic migrations + seed inserts; give it 2–5 minutes on first boot.
   Check the app status again after a while.
-- **「Service Unavailable」 after restart** — the one-shot `db-init` and
+- **A failed install leaves app-data; the NEXT install then fails with
+  "file already exists"** (umbrelOS's copy step won't run over existing
+  app-data). Fully clean before reinstalling:
+  ```bash
+  sudo docker rm -f $(sudo docker ps -aq --filter name=kasm) 2>/dev/null
+  sudo docker network rm $(sudo docker network ls -q --filter name=kasm) 2>/dev/null
+  sudo rm -rf /home/umbrel/umbrel/app-data/kasm-workspaces
+  ```
+  Images stay cached across reinstalls, so the pull phase is fast; the only
+  genuinely slow step is `db-init` seeding (a few minutes).
+- **A hung install leaves umbrelOS's "installed" record even after app-data
+  is gone** → the UI says "already installed", no Install button, MCP status
+  `unknown`. Remove the app via the home-screen icon if present; if the icon
+  is gone, delete its entry from the installed list in
+  `/home/umbrel/umbrel/umbrel.yaml` under `apps:` (NOT the
+  `recentlyOpenedApps` one), then `sudo systemctl restart umbrel.service` so
+  the daemon re-reads it. App containers keep running through that restart.
+- **Service Unavailable after restart** — the one-shot `db-init` and
   `bootstrap` services are marked with a completion flag in
   `data/kasm/conf/`; if a flag is missing after a crash, remove the partial
   state via SSH (`umbrel` → `sudo rm -rf
@@ -64,3 +81,8 @@ Users).
   and retry.
 - **Camera/microphone** — requires a secure context: open the app via
   `https://` (Umbrel's proxy), then grant site permission in the browser.
+- **Developers**: if you hand-patch the compose/bootstrap for a new install,
+  apply the changes to the STORE copy under
+  `app-stores/<hash>/kasm-workspaces/...` — install re-copies the package
+  from the store into app-data and would otherwise silently overwrite an
+  app-data-only patch.

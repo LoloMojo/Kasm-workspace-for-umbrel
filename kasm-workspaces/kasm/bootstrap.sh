@@ -152,7 +152,8 @@ chown -R 1000:1000 "${KASM_INSTALL_BASE}"
 chown -R 70:70 "${KASM_INSTALL_BASE}/conf/database" "${KASM_INSTALL_BASE}/certs/db_server.key" "${KASM_INSTALL_BASE}/certs/db_server.crt" "${KASM_INSTALL_BASE}/log/postgres" "${KASM_INSTALL_BASE}/tmp/kasm_db"
 # umbrelOS provisions the postgres data dir as uid 1000, but kasm's postgres
 # image runs as uid 70 — initdb fails on a 1000-owned dir. Fix here as root.
-chown -R 70:70 "${DB_DATA_DIR:?need db data dir}"
+mkdir -p "${DB_DATA_DIR:?need db data dir}"
+chown -R 70:70 "${DB_DATA_DIR}"
 
 touch "${marker}"
 echo "[bootstrap] complete"
