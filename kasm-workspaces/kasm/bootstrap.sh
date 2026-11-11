@@ -27,6 +27,14 @@ fi
 
 echo "[bootstrap] generating Kasm config tree under ${KASM_INSTALL_BASE}"
 
+# Docker auto-creates missing bind-mount SOURCE paths as empty DIRECTORIES.
+# A prior crashed run can therefore leave a directory where a config FILE
+# should go (e.g. certs/kasm_nginx.crt), which makes openssl fail silently.
+# Self-heal: remove any empty dirs under the tree, then the mkdir block below
+# rebuilds the skeleton from scratch. Only runs on a fresh/regenerating tree
+# (the marker skip above already returned for a good install).
+find "${KASM_INSTALL_BASE}" -mindepth 1 -empty -delete 2>/dev/null || true
+
 mkdir -p "${KASM_INSTALL_BASE}"/{bin,certs,www,file_mappings/common,plugins,rolling}
 mkdir -p "${KASM_INSTALL_BASE}/conf"/{nginx/services.d,nginx/containers.d,database/seed_data,app}
 mkdir -p "${KASM_INSTALL_BASE}/tmp"/{api,kasm_db,manager,guac,rdpgw/var,rdpgw/tmp}
@@ -142,6 +150,9 @@ sed -i "/^  name: log_port$/,/^  value_type: int$/ s/^  value: '443'/  value: '$
 # everything kasm (uid 1000 = umbrelOS app-data owner); postgres bits to uid 70
 chown -R 1000:1000 "${KASM_INSTALL_BASE}"
 chown -R 70:70 "${KASM_INSTALL_BASE}/conf/database" "${KASM_INSTALL_BASE}/certs/db_server.key" "${KASM_INSTALL_BASE}/certs/db_server.crt" "${KASM_INSTALL_BASE}/log/postgres" "${KASM_INSTALL_BASE}/tmp/kasm_db"
+# umbrelOS provisions the postgres data dir as uid 1000, but kasm's postgres
+# image runs as uid 70 — initdb fails on a 1000-owned dir. Fix here as root.
+chown -R 70:70 "${DB_DATA_DIR:?need db data dir}"
 
 touch "${marker}"
 echo "[bootstrap] complete"

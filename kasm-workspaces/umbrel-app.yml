@@ -6,7 +6,7 @@ category: developer
 name: Kasm Workspaces
 tagline: Browser-based desktops and apps (cloud workspaces)
 icon: https://raw.githubusercontent.com/LoloMojo/Kasm-workspace-for-umbrel/main/kasm-workspaces/icon.svg
-version: "1.19.0"
+version: "1.19.0-patch.1"
 port: 8443
 requiresHttps: true
 description: >-
@@ -56,9 +56,18 @@ description: >-
   session containers — the same requirement as every standalone Kasm install.
   Only install this app if you trust everything on your Umbrel server.
 releaseNotes: >-
-  Initial release: Kasm Workspaces 1.19.0 (rolling channel) packaged for
-  umbrelOS. Login admin@kasm.local / user@kasm.local with the Umbrel app
-  password.
+  Patch 1 — fixes five install blockers found on first real installs, so a
+  fresh install now completes without manual patching:
+
+  - bootstrap now self-heals Docker's empty-dir bind-mount sources (certs
+    were becoming directories and breaking openssl).
+  - bootstrap chowns the postgres data dir to uid 70 (umbrelOS provisions it
+    as 1000, kasm's postgres runs as 70) so initdb succeeds.
+  - db-init no longer uses $VARS in its command (Compose interpolated them to
+    blank) — literal paths only.
+  - kasm_agent and proxy now pin container_name (kasm_agent / kasm_proxy)
+    because Kasm resolves its own containers by name via the Docker API, not
+    DNS; gateway APP_HOST updated to kasm_proxy.
 developer: Kasm Technologies
 website: https://www.kasmweb.com/
 dependencies: []

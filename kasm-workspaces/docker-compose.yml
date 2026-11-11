@@ -13,11 +13,14 @@ services:
       KASM_MANAGER_TOKEN: ${APP_KASM_WORKSPACES_MANAGER_TOKEN}
       KASM_REGISTRATION_TOKEN: ${APP_KASM_WORKSPACES_REGISTRATION_TOKEN}
       KASM_PROXY_PORT: "8443"
+      DB_DATA_DIR: /kasm-db-data
     volumes:
       # package files (bootstrap.sh + conf templates) land in app data on install
       - ${APP_DATA_DIR}/kasm:/opt/kasm-src:ro
       # generated config tree, shared by every Kasm service
       - ${APP_DATA_DIR}/data/kasm:/opt/kasm/current
+      # postgres data dir: chowned to 70 by bootstrap (kasm's postgres runs as uid 70)
+      - ${APP_DATA_DIR}/data/db:/kasm-db-data
     networks:
       - default
       - kasm_default_network
@@ -66,12 +69,11 @@ services:
           echo "db already initialized, skipping"
           exit 0
         fi
-        CONFIG=/opt/kasm/current/conf/app/api/api.app.config.yaml
-        ALEMBIC=/src/database/migration/alembic.ini
-        SEEDDIR=/opt/kasm/current/conf/database/seed_data
-        python3 /src/api_server/server.pyc --initialize-database --cfg $CONFIG --alembic-config $ALEMBIC --populate-production --seed-file $SEEDDIR/default_properties.yaml
-        python3 /src/api_server/server.pyc --cfg $CONFIG --alembic-config $ALEMBIC --populate-production --seed-file $SEEDDIR/default_images_amd64.yaml
-        python3 /src/api_server/server.pyc --cfg $CONFIG --alembic-config $ALEMBIC --populate-production --seed-file $SEEDDIR/default_agents.yaml
+        # NOTE: no shell variables or $-refs here — Compose interpolates bare
+        # $VAR and would blank them. Use literal paths only.
+        python3 /src/api_server/server.pyc --initialize-database --cfg /opt/kasm/current/conf/app/api/api.app.config.yaml --alembic-config /src/database/migration/alembic.ini --populate-production --seed-file /opt/kasm/current/conf/database/seed_data/default_properties.yaml
+        python3 /src/api_server/server.pyc --cfg /opt/kasm/current/conf/app/api/api.app.config.yaml --alembic-config /src/database/migration/alembic.ini --populate-production --seed-file /opt/kasm/current/conf/database/seed_data/default_images_amd64.yaml
+        python3 /src/api_server/server.pyc --cfg /opt/kasm/current/conf/app/api/api.app.config.yaml --alembic-config /src/database/migration/alembic.ini --populate-production --seed-file /opt/kasm/current/conf/database/seed_data/default_agents.yaml
         touch /opt/kasm/current/.db-initialized
         echo "database initialized"
     volumes:
@@ -130,6 +132,10 @@ services:
   # Agent spawns per-user session containers via the host Docker socket.
   # NOTE: this is host-root-equivalent access, inherent to Kasm itself.
   kasm_agent:
+    # Kasm looks up its OWN container by this exact name through the Docker
+    # API (not DNS) — umbrelOS's auto-renamed container breaks that lookup, so
+    # pin it explicitly.
+    container_name: kasm_agent
     image: kasmweb/agent:1.19.0-rolling
     user: root
     read_only: true
@@ -176,6 +182,9 @@ services:
   # Browser-facing nginx: listens 443 ssl internally (agent/guac traffic) plus
   # plain HTTP 8080 for the umbrelOS app gateway (which terminates TLS itself).
   proxy:
+    # Kasm's ap/agent/guac look up the session proxy by container name
+    # (Docker API), not by service-name DNS — pin it like the agent.
+    container_name: kasm_proxy
     image: kasmweb/proxy:1.19.0-rolling
     restart: on-failure
     volumes:
@@ -203,8 +212,8 @@ services:
   # umbrelOS 2.0 app gateway config (no container runs; umbreld reads this).
   app_proxy:
     environment:
-      # <app-id>_<compose-service-name>_1
-      APP_HOST: kasm-workspaces_proxy_1
+      # proxy has a pinned container_name (kasm_proxy), so use that directly
+      APP_HOST: kasm_proxy
       APP_PORT: 8080
       # Kasm has its own login + websocket streaming; umbrel auth would
       # double-gate and break session upgrades. Users can re-enable per-app
