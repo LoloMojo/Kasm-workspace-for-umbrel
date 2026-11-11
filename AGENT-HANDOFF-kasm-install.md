@@ -1,5 +1,11 @@
 # Kasm Workspaces on umbrelOS — Agent Handoff Guide
 
+> **Status: the five install blockers are FIXED in `main` (v1.19.0-patch.1).**
+> A fresh store refresh → reinstall installs cleanly with zero patching. See
+> the "fixed blockers" section below; only re-diagnose if a fresh install
+> still fails. (Written before the fixes landed; retained for the failure
+> fingerprints and cleanup procedure, which are still useful.)
+
 You are the Hermes agent on the umbrelOS PC where **Kasm Workspaces** (app id
 `kasm-workspaces`, store `kasm`, Kasm 1.19.0 rolling) has been installed.
 The install reportedly **stuck at 99%**. This file gives you everything you
